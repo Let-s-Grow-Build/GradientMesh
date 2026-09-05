@@ -54,19 +54,29 @@ HIDDEN_SIZE = 8    # output width of Layer 1 = input width of Layer 2, must matc
 
 
 def setup_distributed():
+    os.environ["GLOO_SOCKET_IFNAME"] = "Tailscale"
+    os.environ["USE_LIBUV"] = "0"
     os.environ["MASTER_ADDR"] = MASTER_ADDR
     os.environ["MASTER_PORT"] = MASTER_PORT
-    os.environ["GLOO_SOCKET_IFNAME"] = "Tailscale"
     dist.init_process_group(backend="gloo", rank=RANK, world_size=WORLD_SIZE)
     print(f"[Rank {RANK}] Connected. World size = {WORLD_SIZE}")
 
 
 class Layer1(nn.Module):
-    """Stage 1 of the model: lives entirely on Laptop 1."""
+    """Stage 1 of the model: lives entirely on Laptop 1.
+
+    2 layers deep. Input width stays 4 (raw features), output width
+    stays HIDDEN_SIZE (must still match Layer 2's input width on Laptop 2).
+    (Reduced from 4 layers -> 2 layers: the 4-layer version was plateauing
+    near the target variance, i.e. barely better than predicting the mean,
+    due to dead ReLUs / vanishing gradients with plain SGD at this depth.)
+    """
     def __init__(self):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(4, HIDDEN_SIZE),
+            nn.ReLU(),
+            nn.Linear(HIDDEN_SIZE, HIDDEN_SIZE),
             nn.ReLU(),
         )
 
@@ -87,7 +97,7 @@ def main():
 
     torch.manual_seed(42)
     layer1 = Layer1().to(device)
-    optimizer1 = optim.SGD(layer1.parameters(), lr=0.01)
+    optimizer1 = optim.Adam(layer1.parameters(), lr=0.01)
 
     # This laptop is where the raw input data lives (Stage 1 of the pipeline)
     torch.manual_seed(0)
@@ -96,7 +106,7 @@ def main():
     y = (X.cpu() @ true_weights).unsqueeze(1) + 0.1 * torch.randn(BATCH_SIZE, 1)
     y = y.to(device)
 
-    epochs = 300
+    epochs = 500
     for epoch in range(epochs):
         optimizer1.zero_grad()
 
@@ -122,7 +132,7 @@ def main():
         loss_tensor = torch.zeros(1)  # stays on CPU, it's just a scalar for printing
         dist.recv(loss_tensor, src=1)
 
-        if (epoch + 1) % 10 == 0:
+        if (epoch + 1) % 50 == 0:
             print(f"[Rank {RANK}] Epoch {epoch+1:3d}/{epochs} | Loss: {loss_tensor.item():.4f}")
 
     print(f"[Rank {RANK}] Training finished.")
