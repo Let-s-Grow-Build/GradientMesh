@@ -1,4 +1,4 @@
-# ShardedIntelligence
+# GradientMesh
 
 **Splitting intelligence across GPUs** — a hands-on guide to data, tensor, model, and pipeline parallelism, from one GPU to a full cluster.
 
@@ -14,7 +14,7 @@ Every doc file is written in simple, plain English. Any hard word is explained a
 ## Folder Structure
 
 ```
-ShardedIntelligence/
+GradientMesh/
 │   README.md
 │
 ├───docs/
