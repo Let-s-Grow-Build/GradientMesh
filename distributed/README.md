@@ -85,6 +85,8 @@ The scripts above (`train_dp_laptop1_rank0.py` / `train_dp_laptop2_rank1.py`) ar
 
 `train_mp_laptop1_rank0.py` and `train_mp_laptop2_rank1.py` are different: **Model Parallelism** — each laptop holds a **different half of the same model**. Laptop 1 holds Layer 1, Laptop 2 holds Layer 2. No laptop ever has the whole model.
 
+The `_gpu.py` variants (`train_mp_laptop1_rank0_gpu.py` / `train_mp_laptop2_rank1_gpu.py`) run the model computation on CUDA when a GPU is available. They use the same `gloo` network connection as the CPU versions, so tensors are copied to CPU before `dist.send`/`dist.recv` and moved back to the GPU afterward. If CUDA is unavailable, they automatically fall back to CPU.
+
 ### Why This Needs Manual Send/Receive
 
 In the CPU+GPU model-parallelism notebook (`notebooks/02-model-parallel-cpu-gpu-ann.ipynb`), moving data between devices with `.to(device)` was enough — PyTorch's autograd automatically tracked gradients across devices **because it was all one process**.
@@ -129,6 +131,38 @@ python train_mp_laptop2_rank1.py
 ```
 
 You'll see loss values print on **both** laptops each epoch (Laptop 1 receives the loss just for logging; the real loss computation happens on Laptop 2, where the final layer and labels are).
+
+For the GPU-compute versions, run the matching scripts instead:
+
+```bash
+# On Laptop 1:
+python train_mp_laptop1_rank0_gpu.py
+
+# On Laptop 2 (within a few seconds):
+python train_mp_laptop2_rank1_gpu.py
+```
+
+These scripts still require the same `MASTER_ADDR`, `MASTER_PORT`, `BATCH_SIZE`, and `HIDDEN_SIZE` values on both laptops. GPU-to-GPU transport is not used: `gloo` communicates through CPU staging, which is practical for this Windows and Tailscale setup.
+
+### Output From Both Laptops
+
+The screenshots below show both ranks completing the same model-parallel training run over Tailscale. Rank 0 runs Layer 1 and Rank 1 runs Layer 2.
+
+#### CPU Run
+
+The CPU run completed 100 epochs and reached a final loss of `0.2405` on both laptops.
+
+| Laptop 1 (Rank 0) | Laptop 2 (Rank 1) |
+|---|---|
+| ![CPU model-parallel output from Laptop 1, Rank 0](../Output%20Images/mp_cpu_laptop_0.png) | ![CPU model-parallel output from Laptop 2, Rank 1](../Output%20Images/mp_cpu_laptop_1.jpeg) |
+
+#### GPU Run
+
+The CUDA run completed 500 epochs and reached a final loss of `0.0094` on both laptops.
+
+| Laptop 1 (Rank 0) | Laptop 2 (Rank 1) |
+|---|---|
+| ![GPU model-parallel output from Laptop 1, Rank 0](../Output%20Images/mp_gpu_laptop_0.png) | ![GPU model-parallel output from Laptop 2, Rank 1](../Output%20Images/mp_gpu_laptop_1.jpeg) |
 
 ### Data Parallelism vs. Model Parallelism Scripts — Quick Comparison
 
